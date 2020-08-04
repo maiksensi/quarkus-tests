@@ -1,35 +1,38 @@
 package de.maikfigura;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
+import java.util.HashSet;
+import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
 
-import javax.enterprise.context.ApplicationScoped;
+import javax.persistence.Column;
+import javax.persistence.Entity;
+import javax.persistence.FetchType;
+import javax.persistence.GeneratedValue;
+import javax.persistence.GenerationType;
+import javax.persistence.Id;
+import javax.persistence.ManyToMany;
 
-// @Entity
-// public class Person extends PanacheEntity {
-//   public String name;
-// }
+import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
+import lombok.EqualsAndHashCode;
+import lombok.ToString;
 
-public class Person {
+@Entity
+@EqualsAndHashCode(callSuper = false)
+@ToString
+public class Person extends PanacheEntityBase {
+  @Id
+  @GeneratedValue(strategy = GenerationType.AUTO)
+  public UUID id;
+
+  @Column(unique = true)
   public String name;
 
-  public Person() {
-  }
+  @ManyToMany(fetch = FetchType.EAGER)
+  private Set<Trace> traces = new HashSet<Trace>();
 
-  public Person(String name) {
-    this.name = name;
-  }
-
-  public static List<Person> from(String participants) {
-    String[] splitedParticipants = participants.split(",");
-    List<Person> listOfPersons = new ArrayList<Person>();
-
-    for (String participant : splitedParticipants) {
-      listOfPersons.add(new Person(participant));
-    }
-
-    return listOfPersons;
+  public static Optional<Person> findByName(String name) {
+    return find("name", name).firstResultOptional();
   }
 
 }

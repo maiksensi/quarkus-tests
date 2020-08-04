@@ -1,11 +1,35 @@
 package de.maikfigura;
 
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
+import javax.inject.Inject;
+import javax.json.bind.JsonbBuilder;
+import javax.transaction.HeuristicMixedException;
+import javax.transaction.HeuristicRollbackException;
+import javax.transaction.NotSupportedException;
+import javax.transaction.RollbackException;
+import javax.transaction.SystemException;
+import javax.transaction.Transactional;
+import javax.transaction.UserTransaction;
+import javax.validation.Valid;
 import javax.ws.rs.Consumes;
+import javax.ws.rs.GET;
 import javax.ws.rs.POST;
+import javax.ws.rs.PUT;
 import javax.ws.rs.Path;
 import javax.ws.rs.Produces;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
+
+import org.apache.http.HttpStatus;
+import org.jboss.resteasy.annotations.jaxrs.PathParam;
 
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
@@ -14,49 +38,110 @@ import io.vertx.core.logging.LoggerFactory;
 public class TraceAPI {
   private static final Logger LOG = LoggerFactory.getLogger(TraceAPI.class);
 
-  // @Inject
-  // UserTransaction transaction;
+  @Inject
+  UserTransaction transaction;
 
-  // @GET
-  // @Path("/{id}")
-  // @Produces(MediaType.APPLICATION_JSON)
-  // @Transactional
-  // public Response getOne(@PathParam final Long id) {
-  // Optional<Trace> trace = Trace.findByIdOptional(id);
-  // if (trace.isPresent()) {
-  // return Response.ok(JsonbBuilder.create().toJson(trace)).build();
-  // } else {
-  // return Response.status(HttpStatus.SC_NO_CONTENT).build();
-  // }
-  // }
-
-  // @POST
-  // @Produces(MediaType.APPLICATION_JSON)
-  // @Consumes(MediaType.APPLICATION_JSON)
-  // public Response createTrace(@Valid Trace trace) {
-  // try {
-  // LOG.info(trace);
-  // transaction.begin();
-  // trace.persist();
-  // transaction.commit();
-  // } catch (NotSupportedException | SystemException | SecurityException |
-  // IllegalStateException | RollbackException
-  // | HeuristicMixedException | HeuristicRollbackException e1) {
-  // LOG.error("Could not finish transaction to save entity", e1);
-  // return Response.status(HttpStatus.SC_BAD_REQUEST).build();
-
-  // }
-  // return Response.ok(Trace.find("startTime =?1 AND traceOwner = ?2",
-  // trace.startTime, trace.traceOwner).firstResult())
-  // .build();
-  // }
+  @GET
+  @Path("/{id}")
+  @Produces(MediaType.APPLICATION_JSON)
+  @Transactional
+  public Response getOne(@PathParam UUID id) {
+    final Optional<Trace> trace = Trace.findByIdOptional(id);
+    if (trace.isPresent()) {
+      return Response.ok(JsonbBuilder.create().toJson(trace)).build();
+    } else {
+      return Response.status(HttpStatus.SC_NO_CONTENT).build();
+    }
+  }
 
   @POST
   @Produces(MediaType.APPLICATION_JSON)
   @Consumes(MediaType.APPLICATION_JSON)
-  public Response createTrace(Trace trace) {
-    trace.persistOrUpdate();
-    return Response.ok(Trace.find("startTime =?1 AND traceOwner = ?2", trace.startTime, trace.traceOwner).firstResult())
-        .build();
+  @Transactional
+  public Response createTrace(@Valid Trace trace) {
+    List<Person> persistedParticipants = new ArrayList<Person>();
+    for (Person participant : trace.additionalParticipants) {
+      // persist all participants not yet registered
+      if (Person.findByName(participant.name).isEmpty()) {
+        participant.persistAndFlush();
+        Person persistedPerson = Person.findByName(participant.name).get();
+        persistedParticipants.add(persistedPerson);
+      } else {
+        persistedParticipants.add(Person.findByName(participant.name).get());
+      }
+    }
+
+    // write back all persisted participants to the entity list
+    trace.additionalParticipants = persistedParticipants;
+
+    Optional<Person> traceOwner = Person.find("name", trace.traceOwner.name).firstResultOptional();
+    // persist all traceOwners not yet known
+    if (traceOwner.isEmpty()) {
+      trace.traceOwner.persist();
+    } else {
+      trace.traceOwner = traceOwner.get();
+    }
+    trace.persist();
+    trace.flush();
+    return Response.ok(trace).build();
+  }
+
+  @PUT
+  @Path("/{id}")
+  @Produces(MediaType.APPLICATION_JSON)
+  @Consumes(MediaType.APPLICATION_JSON)
+  public Response updateTrace(@Valid final Trace trace, @PathParam UUID id)
+      throws NotSupportedException, SystemException, SecurityException, IllegalStateException, RollbackException,
+      HeuristicMixedException, HeuristicRollbackException {
+    transaction.begin();
+    Trace tracy = Trace.findById(id);
+    trace.additionalParticipants.clear();
+    tracy.additionalParticipants.addAll(trace.additionalParticipants);
+
+    tracy.traceOwner = trace.traceOwner;
+    tracy.comment = trace.comment;
+    tracy.place = trace.place;
+    tracy.startTime = trace.startTime;
+    tracy.stopTime = trace.stopTime;
+    transaction.commit();
+    Trace tracinger = Trace.findById(id);
+    return Response.ok(tracinger).build();
+
+    // Set<Person> persistedParticipants = new HashSet<Person>();
+    // for (Person participant : trace.additionalParticipants) {
+    // // persist all participants not yet registered
+    // if (Person.findByName(participant.name).isEmpty()) {
+    // participant.persistAndFlush();
+    // Person persistedPerson = Person.findByName(participant.name).get();
+    // persistedParticipants.add(persistedPerson);
+    // } else {
+    // persistedParticipants.add(Person.findByName(participant.name).get());
+    // }
+    // }
+
+    // // write back all persisted participants to the entity list
+    // trace.additionalParticipants = persistedParticipants;
+
+    // Optional<Person> traceOwner = Person.find("name",
+    // trace.traceOwner.name).firstResultOptional();
+    // if (traceOwner.isEmpty()) {
+    // trace.traceOwner.persist();
+    // } else {
+    // trace.traceOwner = traceOwner.get();
+    // }
+
+    // trace.persistAndFlush();
+
+    // if (traceOwner.isPresent()) {
+    // entity.traceOwner = traceOwner.get();
+    // entity.flush();
+    // } else {
+    // Person newTraceOwner = new Person();
+    // newTraceOwner.name = trace.traceOwner.name;
+    // newTraceOwner.persist();
+    // entity.traceOwner = newTraceOwner;
+    // entity.flush();
+    // }
+
   }
 }
