@@ -11,7 +11,7 @@ import javax.persistence.FetchType;
 import javax.persistence.GeneratedValue;
 import javax.persistence.GenerationType;
 import javax.persistence.Id;
-import javax.persistence.ManyToMany;
+import javax.persistence.OneToMany;
 
 import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
 import lombok.EqualsAndHashCode;
@@ -28,7 +28,7 @@ public class Person extends PanacheEntityBase {
   @Column(unique = true)
   public String name;
 
-  @ManyToMany(fetch = FetchType.EAGER)
+  @OneToMany(fetch = FetchType.EAGER)
   private Set<Trace> traces = new HashSet<Trace>();
 
   public static Optional<Person> findByName(String name) {

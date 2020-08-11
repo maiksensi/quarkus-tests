@@ -90,20 +90,45 @@ public class TraceAPI {
   @Path("/{id}")
   @Produces(MediaType.APPLICATION_JSON)
   @Consumes(MediaType.APPLICATION_JSON)
+  @Transactional
   public Response updateTrace(@Valid final Trace trace, @PathParam UUID id)
       throws NotSupportedException, SystemException, SecurityException, IllegalStateException, RollbackException,
       HeuristicMixedException, HeuristicRollbackException {
-    transaction.begin();
     Trace tracy = Trace.findById(id);
-    trace.additionalParticipants.clear();
-    tracy.additionalParticipants.addAll(trace.additionalParticipants);
+    List<Person> persistedParticipants = new ArrayList<Person>();
+    for (Person participant : trace.additionalParticipants) {
+      // persist all participants not yet registered
+      if (participant.id != null) {
+        if (Person.findByIdOptional(participant.id).isEmpty()) {
+          Person p = new Person();
+          p.name = participant.name;
+          p.persistAndFlush();
+          Person persistedPerson = (Person) Person.findByIdOptional(participant.id).get();
+          persistedParticipants.add(persistedPerson);
+        } else {
+          Person pp = (Person) Person.findByIdOptional(participant.id).get();
+          pp.name = participant.name;
+          persistedParticipants.add(pp);
+        }
+      } else {
+        Person p = new Person();
+        p.name = participant.name;
+        p.persistAndFlush();
+        Person persistedPerson = Person.findByName(participant.name).get();
+        persistedParticipants.add(persistedPerson);
+      }
+    }
+
+    tracy.additionalParticipants = persistedParticipants;
 
     tracy.traceOwner = trace.traceOwner;
     tracy.comment = trace.comment;
     tracy.place = trace.place;
     tracy.startTime = trace.startTime;
     tracy.stopTime = trace.stopTime;
-    transaction.commit();
+    // tracy.persistAndFlush();
+    // transaction.commit();
+
     Trace tracinger = Trace.findById(id);
     return Response.ok(tracinger).build();
 

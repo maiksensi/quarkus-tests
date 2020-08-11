@@ -30,7 +30,8 @@ public class Trace extends PanacheEntityBase {
   public UUID id;
   @ManyToOne(cascade = { CascadeType.REFRESH, CascadeType.MERGE, CascadeType.PERSIST, CascadeType.DETACH })
   public Person traceOwner;
-  @ManyToMany(cascade = { CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REFRESH }, fetch = FetchType.EAGER)
+  @ManyToMany(cascade = { CascadeType.REFRESH, CascadeType.MERGE, CascadeType.PERSIST,
+      CascadeType.DETACH }, fetch = FetchType.LAZY)
   public List<Person> additionalParticipants = new ArrayList<Person>();
   public String place;
   @Column(columnDefinition = "TIMESTAMP WITH TIME ZONE")
